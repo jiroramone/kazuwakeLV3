@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>かずわけゲーム</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js CDN for sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase configuration (provided by Canvas environment)
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app); // Make db globally accessible
+        window.auth = getAuth(app);   // Make auth globally accessible
+        window.userId = null;         // Global userId variable
+
+        // Authenticate user
+        onAuthStateChanged(window.auth, async (user) => {
+            if (user) {
+                window.userId = user.uid;
+                console.log("Firebase authenticated. User ID:", window.userId);
+                document.getElementById('user-id-display').textContent = `ユーザーID: ${window.userId}`;
+            } else {
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(window.auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(window.auth);
+                    }
+                } catch (error) {
+                    console.error("Firebase authentication failed:", error);
+                }
+            }
+        });
+
+        window.firebaseInitialized = true; // Flag to indicate Firebase is initialized
+    </script>
+    <style>
+        /* Base styles for the body */
+        body {
+            font-family: "Arial", sans-serif;
+            text-align: center;
+            background-color: #f0f8ff;
+            padding: 20px;
+            overflow: hidden; /* Prevents fireworks canvas from causing scrollbars */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh; /* Ensures the game area is vertically centered */
+        }
+        /* Styling for the main game area container (reused for title screen and game) */
+        .game-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #ffffff;
+            padding: 1.5rem; /* Padding for mobile */
+            border-radius: 1.5rem; /* Rounded corners */
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+            width: 100%;
+            max-width: 600px; /* Max width for desktop */
+            box-sizing: border-box;
+        }
+        /* Styling for headings */
+        h1 {
+            font-size: 28px;
+            color: #444;
+            margin-bottom: 20px;
+        }
+        /* Styling for the question text */
+        #question {
+            font-size: 24px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+        /* Container for the input slots */
+        #input-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap; /* Allows wrapping on smaller screens */
+        }
+        /* Styling for the input fields */
+        .input-slot {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100px; /* Fixed width for input fields */
+            height: 100px; /* Fixed height for input fields */
+            border: 2px solid #aaa;
+            background-color: #fff;
+            border-radius: 12px;
+            box-sizing: border-box; /* Include padding and border in the element's total width and height */
+        }
+        .input-slot input[type="number"] {
+            width: 80px; /* Width of the number input itself */
+            height: 80px; /* Height of the number input itself */
+            font-size: 36px; /* Larger font for numbers */
+            text-align: center;
+            border: none;
+            outline: none;
+            background: transparent;
+            -moz-appearance: textfield; /* Hide arrows in Firefox */
+        }
+        /* Hide arrows for number input in Webkit browsers (Chrome, Safari) */
+        .input-slot input[type="number"]::-webkit-outer-spin-button,
+        .input-slot input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        /* Styling for the "and" separator */
+        #plus {
+            font-size: 32px;
+            user-select: none;
+            color: #666;
+        }
+        /* Styling for the result message */
+        #result {
+            margin-top: 0.25rem;
+            font-size: 22px;
+            color: green;
+            white-space: pre-wrap;
+            min-height: 80px;
+            font-weight: bold;
+            text-align: center;
+            user-select: none;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        /* Styling for the result text overlay */
+        #result div {
+            position: relative;
+            z-index: 10;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+        }
+        /* Styling for the "Hanamaru" image */
+        .big-circle {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 0;
+            user-select: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 15;
+            opacity: 1;
+        }
+
+        /* Styling for general buttons */
+        .game-button {
+            background-color: #10b981; /* Green button */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            font-size: 1.125rem;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            margin-top: 1.5rem; /* Margin top for buttons */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .game-button:hover {
+            background-color: #059669; /* Darker green on hover */
+            transform: translateY(-2px);
+        }
+        .game-button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+
+        /* Small screen specific adjustments */
+        @media (max-width: 640px) {
+            h1 {
+                font-size: 1.75rem;
+            }
+            #question {
+                font-size: 1.5rem;
+            }
+            #plus {
+                font-size: 1.5rem;
+                margin: 0 0.5rem;
+            }
+            .input-slot {
+                width: 80px; /* Adjust for smaller screens */
+                height: 80px; /* Adjust for smaller screens */
+            }
+            .input-slot input[type="number"] {
+                width: 60px;
+                height: 60px;
+                font-size: 28px;
+            }
+            .game-button {
+                font-size: 1rem;
+                padding: 0.6rem 1.2rem;
+            }
+        }
+
+        /* Fireworks canvas styling */
+        #fireworksCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 9999; /* Display on top */
+            pointer-events: none; /* Allows clicks to pass through */
+            background-color: black; /* Solid black background for fireworks */
+        }
+
+        /* Ranking specific styles */
+        #ranking-screen {
+            background-color: #ffffff;
+            padding: 1.5rem;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 600px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #ranking-list {
+            width: 100%;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        .ranking-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-bottom: 1px dashed #eee;
+            font-size: 1.1rem;
+        }
+        .ranking-item:last-child {
+            border-bottom: none;
+        }
+        .ranking-item span:first-child {
+            font-weight: bold;
+            color: #333;
+        }
+        .ranking-item span:last-child {
+            color: #007bff;
+        }
+        /* Modified: loading-ranking is hidden by default now */
+        #loading-ranking {
+            margin-top: 20px;
+            font-size: 1.2rem;
+            color: #555;
+        }
+        #user-id-display {
+            font-size: 0.9rem;
+            color: #777;
+            margin-top: 10px;
+        }
+
+        /* Explicitly ensure hidden class works reliably */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container" class="min-h-screen flex items-center justify-center p-4">
+        <!-- Title Screen -->
+        <div id="title-screen" class="game-area">
+            <h1>かずわけゲーム</h1>
+            <p class="text-xl mb-8">モードを選んでね！</p>
+            <button id="practiceModeButton" class="game-button mb-4">れんしゅう</button>
+            <button id="testModeButton" class="game-button mb-4">テスト (タイムアタック！)</button>
+            <button id="rankingButton" class="game-button bg-blue-500 hover:bg-blue-700">ランキングを見る</button>
+            <div id="user-id-display" class="mt-4 text-sm text-gray-600"></div>
+        </div>
+
+        <!-- Game Area (initially hidden) -->
+        <div id="game-area" class="game-area hidden">
+            <h1>かずわけゲーム（<span id="mode-display"></span>）</h1>
+
+            <div id="question">問題</div>
+
+            <div id="input-container">
+                <div class="input-slot">
+                    <input type="number" id="input1" min="0" max="10" value="" placeholder="0" />
+                </div>
+                <span id="plus">と</span>
+                <div class="input-slot">
+                    <input type="number" id="input2" min="0" max="10" value="" placeholder="0" />
+                </div>
+            </div>
+
+            <div id="result"></div>
+            
+            <div id="timer-display" class="text-2xl font-bold text-blue-700 my-4 hidden">タイム: 00:00</div>
+
+            <button id="restartButton" class="game-button mt-4">もういちど はじめから</button>
+            <button id="backToTitleButton" class="game-button mt-4 bg-gray-500 hover:bg-gray-700">タイトルにもどる</button>
+        </div>
+
+        <!-- Ranking Screen (initially hidden) -->
+        <div id="ranking-screen" class="hidden">
+            <h1>ランキング</h1>
+            <div id="loading-ranking" class="hidden">ランキングを読み込み中...</div>
+            <div id="ranking-list">
+                <!-- Ranking items will be inserted here by JavaScript -->
+            </div>
+            <button id="backToTitleFromRankingButton" class="game-button mt-8 bg-gray-500 hover:bg-gray-700">タイトルにもどる</button>
+        </div>
+    </div>
+
+<script type="module">
+    console.log("Script started loading."); // Added for debugging
+
+    // Firebase instances are now globally available via window.db, window.auth, window.userId
+    // Ensure they are ready before use.
+    let db;
+    let auth;
+    let userId;
+
+    // Wait for Firebase to be initialized and authenticated
+    function waitForFirebase() {
+        return new Promise(resolve => {
+            const checkInterval = setInterval(() => {
+                if (window.firebaseInitialized && window.db && window.auth && window.userId) {
+                    db = window.db;
+                    auth = window.auth;
+                    userId = window.userId;
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 100); // Check every 100ms
+        });
+    }
+
+    const allTargets = [3, 4, 5, 6, 7, 8, 9, 10];
+    let targets = [];
+    let currentIndex = 0;
+    let currentTarget = null;
+    const usedPairs = new Set();
+
+    let currentMode = ''; // 'practice' or 'test'
+    let timerInterval = null;
+    let startTime = 0;
+    let elapsedTime = 0;
+
+    const input1 = document.getElementById("input1");
+    const input2 = document.getElementById("input2");
+
+    let correctSoundSynth; // Tone.js シンセサイザー
+
+    // Tone.js の初期化 (ユーザーの操作後にオーディオコンテキストを開始)
+    // This listener should be on the window, not within the module script's scope
+    window.addEventListener('click', () => {
+        if (Tone.context.state !== 'running') {
+            Tone.start();
+            console.log("AudioContext started.");
+        }
+    }, { once: true }); // 一度だけ実行
+
+    // Correct sound setup
+    // Ensure Tone.js is ready before creating synth
+    Tone.context.resume().then(() => {
+        correctSoundSynth = new Tone.Synth({
+            oscillator: { type: "sine" },
+            envelope: { attack: 0.005, decay: 0.1, sustain: 0.05, release: 0.2 }
+        }).toDestination();
+    }).catch(e => console.error("Tone.js context resume failed:", e));
+
+
+    // Utility function to shuffle an array
+    function shuffleArray(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [array[i], array[j]] = [array[j], array[i]];
+        }
+    }
+
+    // Resets the content of both input slots and the result area
+    function resetInputs() {
+        input1.value = '';
+        input2.value = '';
+        updateResult(''); // Clear result message and image
+        input1.focus(); // Focus on the first input when resetting
+    }
+
+    // Attempts to check the answer if both inputs have valid numbers
+    function tryCheckAnswer() {
+        const a = parseInt(input1.value);
+        const b = parseInt(input2.value);
+
+        // Check if both inputs contain valid numbers
+        if (!isNaN(a) && !isNaN(b) && input1.value !== '' && input2.value !== '') {
+            checkAnswer();
+        }
+    }
+
+    // Updates the question displayed to the user
+    async function updateQuestion() {
+        // Check if all questions have been cleared
+        if (currentIndex >= targets.length) {
+            let finalMessage = "";
+            if (currentMode === 'practice') {
+                finalMessage = "🎉 ぜんもんせいかい！おめでとう！";
+            } else if (currentMode === 'test') {
+                stopTimer();
+                finalMessage = `全問正解！\nあなたのタイム: ${formatTime(elapsedTime)}`;
+                // Save score to Firestore
+                await saveScore(elapsedTime);
+            }
+            updateResult(finalMessage, 'success');
+            document.getElementById('question').textContent = "おしまい";
+            // ★変更点: 全問クリア時はresetInputs()を呼ばない
+            // resetInputs(); 
+            showFireworks(); // Show fireworks when all questions are cleared
+            return;
+        }
+
+        currentTarget = targets[currentIndex]; // Get the current target number
+        document.getElementById('question').textContent = `${currentTarget} は いくつ と いくつ？`;
+        
+        // Dynamically set max attribute for inputs based on currentTarget
+        input1.setAttribute('max', currentTarget);
+        input2.setAttribute('max', currentTarget);
+
+        resetInputs(); // ★変更点: 新しい問題に移る時のみresetInputs()を呼ぶ
+        usedPairs.clear(); // Clear used pairs for the new question
+
+        // Start timer when the first question appears in test mode
+        if (currentMode === 'test' && currentIndex === 0 && !timerInterval) {
+            startTimer();
+        }
+    }
+
+    // Updates the result message displayed to the user
+    function updateResult(text, type = '') {
+        const result = document.getElementById('result');
+        result.innerHTML = ''; // Clear previous content
+        result.className = ''; // Reset classes
+
+        if (type === 'success') {
+            result.classList.add('correct-feedback');
+            // Using a placeholder image for hanamaru. Replace with actual image if available.
+            result.innerHTML = `
+                <img src="https://placehold.co/100x100/00FF00/FFFFFF?text=花丸" alt="花丸" class="big-circle">
+                <div>${text.replace(/\n/g, '<br>')}</div>
+            `;
+        } else if (type === 'incorrect') {
+            result.classList.add('incorrect-feedback');
+            result.textContent = text;
+        } else if (type === 'info') {
+            result.classList.add('info-feedback');
+            result.textContent = text;
+        } else {
+            result.textContent = text; // Default text
+        }
+    }
+
+    // Checks if the numbers in the input fields add up to the current target
+    function checkAnswer() {
+        const a = parseInt(input1.value);
+        const b = parseInt(input2.value);
+
+        // Validate inputs (already done in tryCheckAnswer, but good for robustness)
+        if (isNaN(a) || isNaN(b)) {
+            updateResult("数字を入力してください。", 'info');
+            return;
+        }
+        if (a < 0 || a > currentTarget || b < 0 || b > currentTarget) {
+             updateResult(`入力できる数字は0から${currentTarget}までです。`, 'info');
+             return;
+        }
+
+        // Check if the sum is correct
+        if (a + b === currentTarget) {
+            correctSoundSynth.triggerAttackRelease("C5", "8n"); // Play correct sound
+            // Create a unique key for the pair to track used combinations (e.g., "2,3" is same as "3,2")
+            const key = [a, b].sort((x, y) => x - y).join(',');
+            if (!usedPairs.has(key)) {
+                usedPairs.add(key); // Add the new valid pair
+                // Calculate remaining combinations
+                // For target N, pairs are (0,N), (1,N-1), ..., (floor(N/2), ceil(N/2))
+                // Number of unique pairs is floor(N/2) + 1
+                const totalPairs = Math.floor(currentTarget / 2) + 1;
+                const left = totalPairs - usedPairs.size;
+
+                let message = `せいかい！ ${a} と ${b} で ${currentTarget} になるよ！\n`;
+                message += `のこりのくみあわせ：${left}こ`;
+                updateResult(message, 'success');
+
+                if (left === 0) {
+                    // All combinations found, move to the next question
+                    message += "\nぜんぶの くみあわせが みつかったよ！つぎのもんだいへ！";
+                    updateResult(message, 'success');
+                    currentIndex++;
+                    setTimeout(() => {
+                        updateQuestion(); // Load next question after a short delay
+                    }, 1500); // Increased delay for better user experience
+                }
+                setTimeout(() => {
+                    // ★変更点: 全問クリア直前でなければresetInputs()を呼ぶ
+                    if (currentIndex < targets.length) { 
+                        resetInputs(); 
+                    }
+                }, 1500);
+            } else {
+                updateResult("その くみあわせは もう こたえたよ。", 'info');
+                setTimeout(() => {
+                    resetInputs();
+                }, 1500);
+            }
+        } else {
+            updateResult("ちがうよ。もう いちど！", 'incorrect');
+            setTimeout(() => {
+                resetInputs();
+            }, 1500);
+        }
+    }
+
+    // --- Timer Functions ---
+    function formatTime(ms) {
+        const totalSeconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    function startTimer() {
+        startTime = Date.now();
+        elapsedTime = 0;
+        document.getElementById('timer-display').textContent = 'タイム: 00:00';
+        timerInterval = setInterval(() => {
+            elapsedTime = Date.now() - startTime;
+            document.getElementById('timer-display').textContent = `タイム: ${formatTime(elapsedTime)}`;
+        }, 1000);
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
+
+    function resetTimer() {
+        stopTimer();
+        startTime = 0;
+        elapsedTime = 0;
+        document.getElementById('timer-display').textContent = 'タイム: 00:00';
+    }
+
+    // --- Screen Management Functions ---
+    function showTitleScreen() {
+        console.log("Showing Title Screen.");
+        document.getElementById('title-screen').classList.remove('hidden');
+        document.getElementById('game-area').classList.add('hidden');
+        document.getElementById('ranking-screen').classList.add('hidden');
+        stopTimer(); // Ensure timer is stopped when returning to title
+        resetInputs(); // Clear inputs
+        document.getElementById('timer-display').classList.add('hidden'); // Hide timer
+    }
+
+    function showGameArea() {
+        console.log("Showing Game Area.");
+        document.getElementById('title-screen').classList.add('hidden');
+        document.getElementById('game-area').classList.remove('hidden');
+        document.getElementById('ranking-screen').classList.add('hidden');
+    }
+
+    function showRankingScreen() {
+        console.log("Showing Ranking Screen.");
+        document.getElementById('title-screen').classList.add('hidden');
+        document.getElementById('game-area').classList.add('hidden');
+        document.getElementById('ranking-screen').classList.remove('hidden');
+        loadRanking(); // Load and display ranking when showing the screen
+    }
+
+    // --- Firebase / Ranking Functions ---
+    async function saveScore(timeInMs) {
+        await waitForFirebase(); // Ensure Firebase is initialized
+        if (!db || !userId) {
+            console.error("Firestore or User ID not available for saving score.");
+            return;
+        }
+        try {
+            const scoresCollectionRef = collection(db, `artifacts/${window.__app_id}/users/${userId}/test_scores`);
+            await addDoc(scoresCollectionRef, {
+                elapsedTime: timeInMs,
+                formattedTime: formatTime(timeInMs),
+                timestamp: Date.now()
+            });
+            console.log("Score saved successfully!");
+        } catch (e) {
+            console.error("Error saving score:", e);
+        }
+    }
+
+    async function loadRanking() {
+        await waitForFirebase(); // Ensure Firebase is initialized
+        if (!db || !userId) {
+            document.getElementById('loading-ranking').textContent = "ランキングの読み込みに失敗しました。ユーザー認証を確認してください。";
+            console.error("Firestore or User ID not available for loading ranking.");
+            return;
+        }
+
+        const rankingListDiv = document.getElementById('ranking-list');
+        const loadingRankingDiv = document.getElementById('loading-ranking');
+        
+        loadingRankingDiv.classList.remove('hidden'); // Show loading message
+        rankingListDiv.innerHTML = ''; // Clear previous ranking
+
+        try {
+            const scoresCollectionRef = collection(db, `artifacts/${window.__app_id}/users/${userId}/test_scores`);
+            // ★変更点: orderBy() を使用しないように修正
+            // Firestore の orderBy() はインデックスが必要になる場合があり、エラーの原因となるため、
+            // データ取得後に JavaScript でソートするように変更します。
+            const querySnapshot = await getDocs(scoresCollectionRef); 
+            
+            let scores = [];
+            querySnapshot.forEach((doc) => {
+                scores.push(doc.data());
+            });
+
+            // JavaScript で elapsed time の昇順にソート
+            scores.sort((a, b) => a.elapsedTime - b.elapsedTime);
+
+            if (scores.length === 0) {
+                rankingListDiv.innerHTML = '<p class="text-gray-600">まだ記録がありません。</p>';
+            } else {
+                let rank = 1;
+                scores.forEach((data) => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'ranking-item';
+                    itemDiv.innerHTML = `<span>${rank}.</span><span>${data.formattedTime}</span>`;
+                    rankingListDiv.appendChild(itemDiv);
+                    rank++;
+                });
+            }
+            loadingRankingDiv.classList.add('hidden'); // Hide loading message on success
+        } catch (e) {
+            console.error("Error loading ranking:", e);
+            loadingRankingDiv.textContent = "ランキングの読み込み中にエラーが発生しました。";
+            loadingRankingDiv.classList.remove('hidden'); // Keep loading message visible on error
+        }
+    }
+
+    // --- Fireworks Animation ---
+    let fireworksCanvas = null;
+    let fireworksCtx = null;
+    let fireworks = [];
+    let animationFrameId = null;
+
+    // Class to represent a firework particle
+    class FireworkParticle {
+        constructor(x, y, color, speed, angle, size) {
+            this.x = x;
+            this.y = y;
+            this.color = color;
+            this.speed = speed;
+            this.angle = angle;
+            this.size = size;
+            this.vx = Math.cos(angle) * speed;
+            this.vy = Math.sin(angle) * speed;
+            this.alpha = 1;
+            this.gravity = 0.05; // Slight gravity effect
+            this.friction = 0.97; // Slow down over time
+        }
+
+        update() {
+            this.vx *= this.friction;
+            this.vy *= this.friction;
+            this.vy += this.gravity; // Apply gravity
+
+            this.x += this.vx;
+            this.y += this.vy;
+            this.alpha -= 0.02; // Fade out faster
+            this.size *= 0.98; // Shrink slightly
+        }
+
+        draw() {
+            if (fireworksCtx && this.alpha > 0 && this.size > 0) {
+                fireworksCtx.beginPath();
+                fireworksCtx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                fireworksCtx.fillStyle = `rgba(${this.color.r}, ${this.color.g}, ${this.color.b}, ${this.alpha})`;
+                fireworksCtx.fill();
+            }
+        }
+    }
+
+    // Function to display fireworks animation
+    function showFireworks() {
+        // Remove existing canvas if any
+        if (fireworksCanvas) {
+            fireworksCanvas.remove();
+            cancelAnimationFrame(animationFrameId);
+            fireworks = [];
+        }
+
+        fireworksCanvas = document.createElement('canvas');
+        fireworksCanvas.id = 'fireworksCanvas';
+        document.body.appendChild(fireworksCanvas);
+
+        fireworksCtx = fireworksCanvas.getContext('2d');
+        fireworksCanvas.width = window.innerWidth;
+        fireworksCanvas.height = window.innerHeight;
+
+        // Update canvas size on window resize
+        window.addEventListener('resize', () => {
+            if (fireworksCanvas) {
+                fireworksCanvas.width = window.innerWidth;
+                fireworksCanvas.height = window.innerHeight;
+            }
+        });
+
+        // Function to create a single firework burst
+        function createFirework(x, y) {
+            const particleCount = 60 + Math.floor(Math.random() * 40); // More particles
+            const color = {
+                r: Math.floor(Math.random() * 255),
+                g: Math.floor(Math.random() * 255),
+                b: Math.floor(Math.random() * 255)
+            };
+            for (let i = 0; i < particleCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 2 + Math.random() * 5; // Varied speed
+                const size = 3 + Math.random() * 3; // Varied initial size
+                fireworks.push(new FireworkParticle(x, y, color, speed, angle, size));
+            }
+        }
+
+        // Initial burst
+        createFirework(fireworksCanvas.width / 2, fireworksCanvas.height / 2);
+
+        // Spawn new fireworks over time
+        const spawnInterval = 500; // Interval for new bursts
+        let lastSpawnTime = 0;
+        let totalBursts = 0;
+        const maxBursts = 8; // Limit total bursts
+
+        function animateFireworks(currentTime) {
+            animationFrameId = requestAnimationFrame(animateFireworks);
+
+            fireworksCtx.clearRect(0, 0, fireworksCanvas.width, fireworksCanvas.height);
+            fireworksCtx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // Semi-transparent black for trail effect
+            fireworksCtx.fillRect(0, 0, fireworksCanvas.width, fireworksCanvas.height); // Fill with semi-transparent black
+
+            // Generate new fireworks
+            if (currentTime - lastSpawnTime > spawnInterval && totalBursts < maxBursts) {
+                const x = Math.random() * fireworksCanvas.width;
+                const y = Math.random() * fireworksCanvas.height * 0.8; // Upper 80% of screen
+                createFirework(x, y);
+                lastSpawnTime = currentTime;
+                totalBursts++;
+            }
+
+            // Update and draw fireworks
+            for (let i = fireworks.length - 1; i >= 0; i--) {
+                const p = fireworks[i];
+                p.update();
+                p.draw();
+
+                if (p.alpha <= 0 || p.size <= 0.5) {
+                    fireworks.splice(i, 1); // Remove transparent or tiny particles
+                }
+            }
+        }
+
+        // Start animation
+        animateFireworks(0);
+
+        // Stop fireworks and remove canvas after 5 seconds
+        setTimeout(() => {
+            cancelAnimationFrame(animationFrameId);
+            if (fireworksCanvas) {
+                fireworksCanvas.remove();
+            }
+            fireworks = []; // Clear particle array
+        }, 5000); // Display for 5 seconds
+    }
+
+    // Initializes the game based on the selected mode
+    async function startGame(mode) {
+        currentMode = mode;
+        targets = allTargets.slice(); // Copy all targets
+        shuffleArray(targets); // Randomize the order of questions
+        currentIndex = 0; // Start from the first question
+        usedPairs.clear(); // Clear used pairs for the new game
+
+        document.getElementById('mode-display').textContent = (mode === 'practice' ? 'れんしゅう' : 'テスト');
+        
+        if (mode === 'test') {
+            document.getElementById('timer-display').classList.remove('hidden');
+            resetTimer(); // Reset timer for test mode
+        } else {
+            document.getElementById('timer-display').classList.add('hidden');
+            stopTimer(); // Ensure timer is stopped in practice mode
+        }
+
+        showGameArea();
+        await updateQuestion(); // Display the first question
+    }
+
+    // Event Listeners for mode selection
+    document.getElementById('practiceModeButton').addEventListener('click', () => startGame('practice'));
+    document.getElementById('testModeButton').addEventListener('click', () => startGame('test'));
+    document.getElementById('rankingButton').addEventListener('click', showRankingScreen); // New ranking button
+
+    // Event Listeners for game buttons
+    document.getElementById('restartButton').addEventListener('click', () => startGame(currentMode)); // Restart current mode
+    document.getElementById('backToTitleButton').addEventListener('click', showTitleScreen); // Back to title
+    document.getElementById('backToTitleFromRankingButton').addEventListener('click', showTitleScreen); // Back to title from ranking
+
+    // Input event listeners for auto-focus and auto-check
+    input1.addEventListener('input', (event) => {
+        const val = event.target.value;
+        const numVal = parseInt(val);
+
+        // Auto-focus logic:
+        // If a valid number is entered in input1, attempt to move focus to input2.
+        // Special handling for currentTarget === 10 to allow typing '10'.
+        if (val.length > 0 && !isNaN(numVal)) {
+            if (currentTarget === 10) {
+                // If currentTarget is 10, and the value is '1', wait for the second digit.
+                // Otherwise (e.g., '0' or '10'), move focus.
+                if (val !== '1') { // If it's '0' or '10' or anything else, it's a complete entry for this slot
+                    input2.focus();
+                }
+            } else {
+                // If currentTarget is less than 10, any single digit is a complete entry.
+                input2.focus();
+            }
+        }
+        tryCheckAnswer(); // Attempt to check answer
+    });
+
+    input2.addEventListener('input', tryCheckAnswer); // Attempt to check answer when input2 changes
+
+    console.log("Script finished loading functions and variables."); // Added for debugging
+
+    // Start by showing the title screen when the page loads
+    window.onload = showTitleScreen;
+
+    // This comment confirms the end of the script.
+
+</script>
+</body>
+</html>
