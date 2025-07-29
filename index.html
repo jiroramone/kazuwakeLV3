@@ -843,14 +843,21 @@
         // Special handling for currentTarget === 10 to allow typing '10'.
         if (val.length > 0 && !isNaN(numVal)) {
             if (currentTarget === 10) {
-                // If currentTarget is 10, and the value is '1', wait for the second digit.
-                // Otherwise (e.g., '0' or '10'), move focus.
-                if (val !== '1') { // If it's '0' or '10' or anything else, it's a complete entry for this slot
+                // If currentTarget is 10, move focus only when 2 digits are entered (e.g., '10')
+                if (val.length === 2) {
+                    console.log("input1: currentTarget is 10 and 2 digits entered, moving focus to input2.");
                     input2.focus();
+                } else {
+                    console.log("input1: currentTarget is 10 and less than 2 digits, keeping focus on input1.");
                 }
             } else {
-                // If currentTarget is less than 10, any single digit is a complete entry.
-                input2.focus();
+                // If currentTarget is less than 10, move focus when 1 digit is entered
+                if (val.length === 1) {
+                    console.log("input1: currentTarget is not 10 and 1 digit entered, moving focus to input2.");
+                    input2.focus();
+                } else {
+                    console.log("input1: currentTarget is not 10 and not 1 digit, keeping focus on input1 (should not happen for single digit targets).");
+                }
             }
         }
         tryCheckAnswer(); // Attempt to check answer
