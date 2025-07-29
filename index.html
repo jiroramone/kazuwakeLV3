@@ -634,7 +634,6 @@
 
         try {
             const scoresCollectionRef = collection(db, `artifacts/${window.__app_id}/users/${userId}/test_scores`);
-            // ★変更点: orderBy() を使用しないように修正
             // Firestore の orderBy() はインデックスが必要になる場合があり、エラーの原因となるため、
             // データ取得後に JavaScript でソートするように変更します。
             const querySnapshot = await getDocs(scoresCollectionRef); 
@@ -835,40 +834,48 @@
 
     // Input event listeners for auto-focus and auto-check
     input1.addEventListener('input', (event) => {
-        const val = event.target.value;
+        let val = event.target.value;
         const numVal = parseInt(val);
+        const delayTime = 500; // 0.5 seconds
 
-        // Enforce max value immediately for input1
+        // Enforce max value immediately for input1 (prevents typing numbers > currentTarget)
         if (!isNaN(numVal) && numVal > currentTarget) {
             val = String(currentTarget);
             event.target.value = val;
-            numVal = currentTarget;
         }
 
-        // Auto-focus logic:
-        // If a valid number is entered in input1, attempt to move focus to input2.
-        if (val.length > 0 && !isNaN(numVal)) {
-            if (currentTarget === 10) {
-                // If currentTarget is 10:
-                // If the input is '1' and it's the only digit, wait for the second digit (e.g., '10').
-                // Otherwise (e.g., '0', '2'-'9', or '10' itself), move focus.
-                if (val === '1' && val.length === 1) {
-                    console.log("input1: currentTarget is 10, typed '1', waiting for second digit.");
-                    // Do nothing, keep focus on input1
-                } else {
-                    // For '0' or '10' or any other single digit (which shouldn't happen if max is 10 and target is 10), move focus.
-                    console.log("input1: currentTarget is 10, moving focus to input2.");
-                    input2.focus();
-                }
-            } else {
-                // If currentTarget is less than 10, move focus when 1 digit is entered
-                if (val.length === 1) {
-                    console.log("input1: currentTarget is not 10 and 1 digit entered, moving focus to input2.");
-                    input2.focus();
-                }
-            }
+        // Clear any existing timeout for this input to prevent old timeouts from firing prematurely
+        if (input1.timeoutId) {
+            clearTimeout(input1.timeoutId);
+            input1.timeoutId = null;
         }
-        tryCheckAnswer(); // Attempt to check answer
+
+        // If input is empty, do nothing and return.
+        if (val.length === 0) {
+            return;
+        }
+
+        // If currentTarget is 10 and a 2-digit number is entered (e.g., '10')
+        if (currentTarget === 10 && val.length === 2) {
+            input2.focus();
+            tryCheckAnswer();
+        } 
+        // For any other single-digit input (including '1' for target 10, or any digit for other targets)
+        else if (val.length === 1) {
+            input1.timeoutId = setTimeout(() => {
+                // After the delay, if the value is still 1 digit, move focus.
+                // This handles cases like typing '1' and then not typing '0', or typing '0' (for 0+10).
+                // It also applies to all single digit targets.
+                if (input1.value.length === 1) {
+                    input2.focus();
+                    tryCheckAnswer();
+                }
+                input1.timeoutId = null; // Clear the timeout ID
+            }, delayTime);
+        }
+        // If the user types something like '1' then quickly '0' (making it '10'),
+        // the `val.length === 2` condition above will catch it and move focus immediately,
+        // clearing any pending timeout. This ensures quick input for '10' is still fast.
     });
 
     input2.addEventListener('input', tryCheckAnswer); // Attempt to check answer when input2 changes
