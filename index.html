@@ -463,9 +463,9 @@
 
         if (type === 'success') {
             result.classList.add('correct-feedback');
-            // Using a placeholder image for hanamaru. Replace with actual image if available.
+            // ★変更点: hanamaru.png を使用
             result.innerHTML = `
-                <img src="https://placehold.co/100x100/00FF00/FFFFFF?text=花丸" alt="花丸" class="big-circle">
+                <img src="hanamaru.png" alt="花丸" class="big-circle">
                 <div>${text.replace(/\n/g, '<br>')}</div>
             `;
         } else if (type === 'incorrect') {
