@@ -93,33 +93,20 @@
             margin-bottom: 20px;
             flex-wrap: wrap; /* Allows wrapping on smaller screens */
         }
-        /* Styling for the input fields */
-        .input-slot {
+        /* Styling for the new number display slots */
+        .number-display-slot {
             display: flex;
             justify-content: center;
             align-items: center;
             width: 100px; /* Fixed width for input fields */
             height: 100px; /* Fixed height for input fields */
             border: 2px solid #aaa;
-            background-color: #fff;
+            background-color: #f0f4f8;
             border-radius: 12px;
-            box-sizing: border-box; /* Include padding and border in the element's total width and height */
-        }
-        .input-slot input[type="number"] {
-            width: 80px; /* Width of the number input itself */
-            height: 80px; /* Height of the number input itself */
-            font-size: 36px; /* Larger font for numbers */
-            text-align: center;
-            border: none;
-            outline: none;
-            background: transparent;
-            -moz-appearance: textfield; /* Hide arrows in Firefox */
-        }
-        /* Hide arrows for number input in Webkit browsers (Chrome, Safari) */
-        .input-slot input[type="number"]::-webkit-outer-spin-button,
-        .input-slot input[type="number"]::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
+            font-size: 36px;
+            font-weight: bold;
+            color: #333;
+            box-sizing: border-box;
         }
 
         /* Styling for the "and" separator */
@@ -166,6 +153,50 @@
             opacity: 1;
         }
 
+        /* Styling for number buttons container */
+        #number-buttons {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-top: 20px;
+            width: 100%;
+            max-width: 400px;
+        }
+        /* Styling for the number buttons */
+        .number-button {
+            background-color: #e2e8f0; /* Light gray */
+            color: #333;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .number-button:hover {
+            background-color: #cbd5e1; /* Darker gray on hover */
+            transform: translateY(-2px);
+        }
+        .number-button:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        .clear-button {
+            grid-column: span 2;
+            background-color: #ef4444; /* Red for clear */
+            color: white;
+            font-size: 1.25rem;
+        }
+        .clear-button:hover {
+            background-color: #dc2626; /* Darker red on hover */
+        }
+        .number-button.zero-button {
+            grid-column: span 2;
+        }
+
+
         /* Styling for general buttons */
         .game-button {
             background-color: #10b981; /* Green button */
@@ -201,13 +232,9 @@
                 font-size: 1.5rem;
                 margin: 0 0.5rem;
             }
-            .input-slot {
-                width: 80px; /* Adjust for smaller screens */
-                height: 80px; /* Adjust for smaller screens */
-            }
-            .input-slot input[type="number"] {
-                width: 60px;
-                height: 60px;
+            .number-display-slot {
+                width: 80px;
+                height: 80px;
                 font-size: 28px;
             }
             .game-button {
@@ -303,14 +330,27 @@
 
             <div id="question">問題</div>
 
+            <!-- New number display slots for button input -->
             <div id="input-container">
-                <div class="input-slot">
-                    <input type="number" id="input1" min="0" max="10" value="" placeholder="0" />
-                </div>
+                <div class="number-display-slot" id="selected-num1-display"></div>
                 <span id="plus">と</span>
-                <div class="input-slot">
-                    <input type="number" id="input2" min="0" max="10" value="" placeholder="0" />
-                </div>
+                <div class="number-display-slot" id="selected-num2-display"></div>
+            </div>
+
+            <!-- New number buttons for input -->
+            <div id="number-buttons">
+                <button class="number-button" data-value="1">1</button>
+                <button class="number-button" data-value="2">2</button>
+                <button class="number-button" data-value="3">3</button>
+                <button class="number-button" data-value="4">4</button>
+                <button class="number-button" data-value="5">5</button>
+                <button class="number-button" data-value="6">6</button>
+                <button class="number-button" data-value="7">7</button>
+                <button class="number-button" data-value="8">8</button>
+                <button class="number-button" data-value="9">9</button>
+                <button class="number-button zero-button" data-value="0">0</button>
+                <button class="number-button" data-value="10">10</button>
+                <button class="number-button clear-button" id="clear-button">クリア</button>
             </div>
 
             <div id="result"></div>
@@ -333,7 +373,7 @@
     </div>
 
 <script type="module">
-    console.log("Script started loading."); // Added for debugging
+    console.log("Script started loading."); // Log for debugging
 
     // Firebase instances are now globally available via window.db, window.auth, window.userId
     // Ensure they are ready before use.
@@ -367,29 +407,32 @@
     let startTime = 0;
     let elapsedTime = 0;
 
-    const input1 = document.getElementById("input1");
-    const input2 = document.getElementById("input2");
+    // State for button-based input
+    let selectedNum1 = null;
+    let selectedNum2 = null;
+    let activeInput = 1; // 1 for the first slot, 2 for the second
 
-    let correctSoundSynth; // Tone.js シンセサイザー
+    // DOM elements for new display slots
+    const selectedNum1Display = document.getElementById("selected-num1-display");
+    const selectedNum2Display = document.getElementById("selected-num2-display");
 
-    // Tone.js の初期化 (ユーザーの操作後にオーディオコンテキストを開始)
-    // This listener should be on the window, not within the module script's scope
+    let correctSoundSynth; // Tone.js synthesizer
+
+    // Initialize Tone.js (starts audio context on user interaction)
     window.addEventListener('click', () => {
         if (Tone.context.state !== 'running') {
             Tone.start();
             console.log("AudioContext started.");
         }
-    }, { once: true }); // 一度だけ実行
+    }, { once: true }); // Run once
 
     // Correct sound setup
-    // Ensure Tone.js is ready before creating synth
     Tone.context.resume().then(() => {
         correctSoundSynth = new Tone.Synth({
             oscillator: { type: "sine" },
             envelope: { attack: 0.005, decay: 0.1, sustain: 0.05, release: 0.2 }
         }).toDestination();
     }).catch(e => console.error("Tone.js context resume failed:", e));
-
 
     // Utility function to shuffle an array
     function shuffleArray(array) {
@@ -399,23 +442,40 @@
         }
     }
 
-    // Resets the content of both input slots and the result area
+    // Resets the content of both number display slots and the result area
     function resetInputs() {
-        input1.value = '';
-        input2.value = '';
+        selectedNum1 = null;
+        selectedNum2 = null;
+        activeInput = 1;
+        selectedNum1Display.textContent = '';
+        selectedNum2Display.textContent = '';
         updateResult(''); // Clear result message and image
-        input1.focus(); // Focus on the first input when resetting
     }
 
-    // Attempts to check the answer if both inputs have valid numbers
+    // Attempts to check the answer if both number displays have values
     function tryCheckAnswer() {
-        const a = parseInt(input1.value);
-        const b = parseInt(input2.value);
-
-        // Check if both inputs contain valid numbers
-        if (!isNaN(a) && !isNaN(b) && input1.value !== '' && input2.value !== '') {
+        if (selectedNum1 !== null && selectedNum2 !== null) {
             checkAnswer();
         }
+    }
+
+    // Handles a number button click
+    function handleNumberButtonClick(number) {
+        if (activeInput === 1) {
+            selectedNum1 = number;
+            selectedNum1Display.textContent = number;
+            activeInput = 2; // Switch to the second input
+        } else if (activeInput === 2) {
+            selectedNum2 = number;
+            selectedNum2Display.textContent = number;
+            activeInput = 1; // Switch back to the first input
+        }
+        tryCheckAnswer();
+    }
+
+    // Handles the clear button click
+    function handleClearButtonClick() {
+        resetInputs();
     }
 
     // Updates the question displayed to the user
@@ -433,8 +493,6 @@
             }
             updateResult(finalMessage, 'success');
             document.getElementById('question').textContent = "おしまい";
-            // ★変更点: 全問クリア時はresetInputs()を呼ばない
-            // resetInputs(); 
             showFireworks(); // Show fireworks when all questions are cleared
             return;
         }
@@ -442,11 +500,7 @@
         currentTarget = targets[currentIndex]; // Get the current target number
         document.getElementById('question').textContent = `${currentTarget} は いくつ と いくつ？`;
         
-        // Dynamically set max attribute for inputs based on currentTarget
-        input1.setAttribute('max', currentTarget);
-        input2.setAttribute('max', currentTarget);
-
-        resetInputs(); // ★変更点: 新しい問題に移る時のみresetInputs()を呼ぶ
+        resetInputs(); // Reset for the new question
         usedPairs.clear(); // Clear used pairs for the new question
 
         // Start timer when the first question appears in test mode
@@ -463,7 +517,6 @@
 
         if (type === 'success') {
             result.classList.add('correct-feedback');
-            // ★変更点: hanamaru.png を使用
             result.innerHTML = `
                 <img src="hanamaru.png" alt="花丸" class="big-circle">
                 <div>${text.replace(/\n/g, '<br>')}</div>
@@ -479,20 +532,10 @@
         }
     }
 
-    // Checks if the numbers in the input fields add up to the current target
+    // Checks if the numbers add up to the current target
     function checkAnswer() {
-        const a = parseInt(input1.value);
-        const b = parseInt(input2.value);
-
-        // Validate inputs (already done in tryCheckAnswer, but good for robustness)
-        if (isNaN(a) || isNaN(b)) {
-            updateResult("数字を入力してください。", 'info');
-            return;
-        }
-        if (a < 0 || a > currentTarget || b < 0 || b > currentTarget) {
-             updateResult(`入力できる数字は0から${currentTarget}までです。`, 'info');
-             return;
-        }
+        const a = selectedNum1;
+        const b = selectedNum2;
 
         // Check if the sum is correct
         if (a + b === currentTarget) {
@@ -502,8 +545,6 @@
             if (!usedPairs.has(key)) {
                 usedPairs.add(key); // Add the new valid pair
                 // Calculate remaining combinations
-                // For target N, pairs are (0,N), (1,N-1), ..., (floor(N/2), ceil(N/2))
-                // Number of unique pairs is floor(N/2) + 1
                 const totalPairs = Math.floor(currentTarget / 2) + 1;
                 const left = totalPairs - usedPairs.size;
 
@@ -521,7 +562,7 @@
                     }, 1500); // Increased delay for better user experience
                 }
                 setTimeout(() => {
-                    // ★変更点: 全問クリア直前でなければresetInputs()を呼ぶ
+                    // Reset inputs only if not all questions are cleared
                     if (currentIndex < targets.length) { 
                         resetInputs(); 
                     }
@@ -634,8 +675,8 @@
 
         try {
             const scoresCollectionRef = collection(db, `artifacts/${window.__app_id}/users/${userId}/test_scores`);
-            // Firestore の orderBy() はインデックスが必要になる場合があり、エラーの原因となるため、
-            // データ取得後に JavaScript でソートするように変更します。
+            // Firestore's orderBy() can cause errors due to requiring an index,
+            // so we'll sort the data with JavaScript after fetching.
             const querySnapshot = await getDocs(scoresCollectionRef); 
             
             let scores = [];
@@ -643,7 +684,7 @@
                 scores.push(doc.data());
             });
 
-            // JavaScript で elapsed time の昇順にソート
+            // Sort by elapsed time in ascending order using JavaScript
             scores.sort((a, b) => a.elapsedTime - b.elapsedTime);
 
             if (scores.length === 0) {
@@ -756,8 +797,8 @@
         // Spawn new fireworks over time
         const spawnInterval = 500; // Interval for new bursts
         let lastSpawnTime = 0;
-        let totalBursts = 0;
-        const maxBursts = 8; // Limit total bursts
+        let totalBursts = 8; // Total bursts
+        let bursts = 0; // Current burst count
 
         function animateFireworks(currentTime) {
             animationFrameId = requestAnimationFrame(animateFireworks);
@@ -767,12 +808,12 @@
             fireworksCtx.fillRect(0, 0, fireworksCanvas.width, fireworksCanvas.height); // Fill with semi-transparent black
 
             // Generate new fireworks
-            if (currentTime - lastSpawnTime > spawnInterval && totalBursts < maxBursts) {
+            if (currentTime - lastSpawnTime > spawnInterval && bursts < totalBursts) {
                 const x = Math.random() * fireworksCanvas.width;
                 const y = Math.random() * fireworksCanvas.height * 0.8; // Upper 80% of screen
                 createFirework(x, y);
                 lastSpawnTime = currentTime;
-                totalBursts++;
+                bursts++;
             }
 
             // Update and draw fireworks
@@ -832,55 +873,18 @@
     document.getElementById('backToTitleButton').addEventListener('click', showTitleScreen); // Back to title
     document.getElementById('backToTitleFromRankingButton').addEventListener('click', showTitleScreen); // Back to title from ranking
 
-    // Input event listeners for auto-focus and auto-check
-    input1.addEventListener('input', (event) => {
-        let val = event.target.value;
-        const numVal = parseInt(val);
-        const delayTime = 500; // 0.5 seconds
-
-        // Enforce max value immediately for input1 (prevents typing numbers > currentTarget)
-        if (!isNaN(numVal) && numVal > currentTarget) {
-            val = String(currentTarget);
-            event.target.value = val;
-        }
-
-        // Clear any existing timeout for this input to prevent old timeouts from firing prematurely
-        if (input1.timeoutId) {
-            clearTimeout(input1.timeoutId);
-            input1.timeoutId = null;
-        }
-
-        // If input is empty, do nothing and return.
-        if (val.length === 0) {
-            return;
-        }
-
-        // If currentTarget is 10 and a 2-digit number is entered (e.g., '10')
-        if (currentTarget === 10 && val.length === 2) {
-            input2.focus();
-            tryCheckAnswer();
-        } 
-        // For any other single-digit input (including '1' for target 10, or any digit for other targets)
-        else if (val.length === 1) {
-            input1.timeoutId = setTimeout(() => {
-                // After the delay, if the value is still 1 digit, move focus.
-                // This handles cases like typing '1' and then not typing '0', or typing '0' (for 0+10).
-                // It also applies to all single digit targets.
-                if (input1.value.length === 1) {
-                    input2.focus();
-                    tryCheckAnswer();
-                }
-                input1.timeoutId = null; // Clear the timeout ID
-            }, delayTime);
-        }
-        // If the user types something like '1' then quickly '0' (making it '10'),
-        // the `val.length === 2` condition above will catch it and move focus immediately,
-        // clearing any pending timeout. This ensures quick input for '10' is still fast.
+    // Add event listeners to number buttons
+    document.querySelectorAll('.number-button').forEach(button => {
+        button.addEventListener('click', () => {
+            const value = parseInt(button.dataset.value);
+            handleNumberButtonClick(value);
+        });
     });
 
-    input2.addEventListener('input', tryCheckAnswer); // Attempt to check answer when input2 changes
+    // Add event listener to the clear button
+    document.getElementById('clear-button').addEventListener('click', handleClearButtonClick);
 
-    console.log("Script finished loading functions and variables."); // Added for debugging
+    console.log("Script finished loading functions and variables."); // Log for debugging
 
     // Start by showing the title screen when the page loads
     window.onload = showTitleScreen;
@@ -890,3 +894,4 @@
 </script>
 </body>
 </html>
+
